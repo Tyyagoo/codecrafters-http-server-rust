@@ -1,8 +1,14 @@
+#![allow(dead_code)]
+
 use std::{
     collections::HashMap,
     io::{self, BufRead, BufReader, Error, Read, Result, Write},
     net::{TcpListener, TcpStream},
 };
+
+use response::Response;
+
+mod response;
 
 #[derive(Debug)]
 enum HttpMethod {
@@ -41,7 +47,7 @@ fn main() -> Result<()> {
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let mut buf = BufReader::new(&mut stream);
+    let buf = BufReader::new(&mut stream);
     let lines: Vec<String> = buf
         .lines()
         .map(|line| line.unwrap())
@@ -55,13 +61,9 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         "POST" => HttpMethod::Post,
         _ => unimplemented!(),
     };
-    println!("Method: {:?}", method);
 
     let target = start_line.next().expect("Missing target.");
-    println!("Target: {}", target);
-
     let version = start_line.next().expect("Missing HTTP version.");
-    println!("Version: {}", version);
 
     let mut headers = HashMap::new();
     for line in lines.iter() {
@@ -76,7 +78,6 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
             parts.next().unwrap(),
         );
     }
-    println!("Headers: {:?}", headers);
 
     let request = Request {
         method,
@@ -85,16 +86,26 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         headers,
         body: "",
     };
+
+    println!("{:?}", request);
     let response = router(request);
-    send_response(&mut stream, response)?;
+    send_response(&mut stream, response.render().as_bytes())?;
 
     Ok(())
 }
 
-fn router(req: Request) -> &[u8] {
+fn router(req: Request) -> Response {
     match req.target {
-        "/" => b"HTTP/1.1 200 OK\r\n\r\n",
-        _ => b"HTTP/1.1 404 Not Found\r\n\r\n",
+        "/" => Response::new("200 OK", ""),
+        _ if req.target.starts_with("/echo") => {
+            let what = req.target.split('/').last().unwrap();
+            let len = what.len().to_string();
+            let mut response = Response::new("200 OK", what);
+            response.insert_header("Content-Type", "text/plain");
+            response.insert_header("Content-length", len);
+            response
+        }
+        _ => Response::new("404 Not Found", ""),
     }
 }
 
