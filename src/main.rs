@@ -78,11 +78,8 @@ fn parse_headers<T: Read>(buf: &mut BufReader<T>) -> Result<HashMap<String, Stri
             break;
         }
 
-        let mut parts = line.split_ascii_whitespace();
-        headers.insert(
-            parts.next().unwrap().replace(':', ""),
-            parts.next().unwrap().trim().to_string(),
-        );
+        let (name, value) = line.split_once(':').expect("Missing colons.");
+        headers.insert(name.into(), value.trim().into());
     }
 
     Ok(headers)
@@ -131,15 +128,22 @@ fn router(req: Request) -> Response {
             let what = req.target.split('/').last().unwrap();
 
             match req.headers.get("Accept-Encoding") {
-                Some(encoding) => match encoding.as_str() {
-                    "gzip" => {
-                        let mut res = Response::new("200 OK", what);
-                        res.insert_header("Content-Encoding", "gzip");
-                        res
-                    }
+                Some(encodings) => {
+                    let available_encodings = ["gzip"];
+                    let encoding = encodings
+                        .split(',')
+                        .find(|s| available_encodings.contains(&s.trim()));
 
-                    _ => Response::new("200 OK", what),
-                },
+                    match encoding {
+                        Some(e) => {
+                            let mut res = Response::new("200 OK", what);
+                            res.insert_header("Content-Encoding", e);
+                            res
+                        }
+
+                        _ => Response::new("200 OK", what),
+                    }
+                }
 
                 None => Response::new("200 OK", what),
             }
