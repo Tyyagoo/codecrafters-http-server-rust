@@ -2,8 +2,10 @@
 
 use std::{
     collections::HashMap,
+    fs,
     io::{self, BufRead, BufReader, Error, Read, Result, Write},
     net::{TcpListener, TcpStream},
+    path::PathBuf,
 };
 
 use response::Response;
@@ -107,6 +109,18 @@ fn router(req: Request) -> Response {
             let what = req.target.split('/').last().unwrap();
             Response::new("200 OK", what)
         }
+
+        _ if req.target.starts_with("/files") => {
+            let base = std::env::args().last().unwrap();
+            let filename = req.target.split("/").last().unwrap().to_string();
+            let path: PathBuf = [base, filename].iter().collect();
+
+            match fs::read(path) {
+                Ok(buf) => Response::new_stream("200 OK", buf),
+                Err(_) => Response::new("404 Not Found", ""),
+            }
+        }
+
         _ => Response::new("404 Not Found", ""),
     }
 }

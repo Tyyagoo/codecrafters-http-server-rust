@@ -22,6 +22,19 @@ impl Response {
         }
     }
 
+    pub fn new_stream(status: impl Into<String>, body: Vec<u8>) -> Response {
+        let len = body.len().to_string();
+        Response {
+            headers: Vec::from([
+                ("Content-Type".into(), "application/octet-stream".into()),
+                ("Content-Length".into(), len),
+            ]),
+            status: status.into(),
+            version: "HTTP/1.1".into(),
+            body: String::from_utf8(body).unwrap(),
+        }
+    }
+
     pub fn insert_header(&mut self, name: impl Into<String>, value: impl Into<String>) {
         self.headers.push((name.into(), value.into()));
     }
