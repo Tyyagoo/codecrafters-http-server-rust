@@ -5,12 +5,11 @@ pub struct Response {
     status: String,
     version: String,
     headers: Vec<(String, String)>,
-    body: String,
+    body: Vec<u8>,
 }
 
 impl Response {
-    pub fn new(status: impl Into<String>, body: impl Into<String>) -> Response {
-        let body = body.into();
+    pub fn new(status: impl Into<String>, body: Vec<u8>) -> Response {
         Response {
             headers: Vec::from([
                 ("Content-Type".into(), "text/plain".into()),
@@ -31,7 +30,7 @@ impl Response {
             ]),
             status: status.into(),
             version: "HTTP/1.1".into(),
-            body: String::from_utf8(body).unwrap(),
+            body,
         }
     }
 
@@ -39,16 +38,24 @@ impl Response {
         self.headers.push((name.into(), value.into()));
     }
 
-    pub fn render(&self) -> String {
+    pub fn render(&self) -> Vec<u8> {
         let headers = self
             .headers
             .iter()
             .map(|(name, value)| format!("{}: {}\r\n", name, value))
             .join("");
 
-        format!(
-            "{} {}\r\n{}\r\n{}",
-            self.version, self.status, headers, self.body
-        )
+        let headers_bytes = headers.as_bytes();
+
+        [
+            self.version.as_bytes(),
+            b" ",
+            self.status.as_bytes(),
+            b"\r\n",
+            headers_bytes,
+            b"\r\n",
+            self.body.as_slice(),
+        ]
+        .concat()
     }
 }

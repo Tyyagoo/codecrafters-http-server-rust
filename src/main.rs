@@ -112,17 +112,18 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
     println!("{:?}", request);
     let response = router(request);
-    send_response(&mut stream, response.render().as_bytes())?;
+    println!("{:?}", response);
+    send_response(&mut stream, response.render().as_slice())?;
 
     Ok(())
 }
 
 fn router(req: Request) -> Response {
     match req.target.as_str() {
-        "/" => Response::new("200 OK", ""),
+        "/" => Response::new("200 OK", vec![]),
         "/user-agent" => {
             let agent = req.headers.get("User-Agent").unwrap();
-            Response::new("200 OK", agent)
+            Response::new("200 OK", agent.as_bytes().to_vec())
         }
         _ if req.target.starts_with("/echo") => {
             let what = req.target.split('/').last().unwrap();
@@ -136,16 +137,36 @@ fn router(req: Request) -> Response {
 
                     match encoding {
                         Some(e) => {
-                            let mut res = Response::new("200 OK", what);
-                            res.insert_header("Content-Encoding", e);
-                            res
+                            // hmm.
+                            let mut command = std::process::Command::new("gzip")
+                                .arg("-c")
+                                .stdin(std::process::Stdio::piped())
+                                .stdout(std::process::Stdio::piped())
+                                .spawn()
+                                .unwrap();
+
+                            {
+                                let stdin = command.stdin.as_mut().unwrap();
+                                stdin.write_all(what.as_bytes()).unwrap();
+                            }
+
+                            let output = command.wait_with_output().unwrap();
+                            if output.status.success() {
+                                let compressed = output.stdout;
+
+                                let mut res = Response::new("200 OK", compressed);
+                                res.insert_header("Content-Encoding", e);
+                                res
+                            } else {
+                                panic!()
+                            }
                         }
 
-                        _ => Response::new("200 OK", what),
+                        _ => Response::new("200 OK", what.as_bytes().to_vec()),
                     }
                 }
 
-                None => Response::new("200 OK", what),
+                None => Response::new("200 OK", what.as_bytes().to_vec()),
             }
         }
 
@@ -157,17 +178,17 @@ fn router(req: Request) -> Response {
             match req.method {
                 HttpMethod::Get => match fs::read(path) {
                     Ok(buf) => Response::new_stream("200 OK", buf),
-                    Err(_) => Response::new("404 Not Found", ""),
+                    Err(_) => Response::new("404 Not Found", vec![]),
                 },
                 HttpMethod::Post => {
                     fs::write(path, req.body).unwrap();
-                    Response::new("201 Created", "")
+                    Response::new("201 Created", vec![])
                 }
                 _ => panic!(),
             }
         }
 
-        _ => Response::new("404 Not Found", ""),
+        _ => Response::new("404 Not Found", vec![]),
     }
 }
 
