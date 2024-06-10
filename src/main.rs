@@ -33,9 +33,11 @@ fn main() -> Result<()> {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => {
+            Ok(stream) => {
                 println!("accepted new connection");
-                handle_connection(stream)?;
+                std::thread::spawn(move || {
+                    handle_connection(stream).unwrap();
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
