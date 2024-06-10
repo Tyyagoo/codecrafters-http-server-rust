@@ -129,7 +129,20 @@ fn router(req: Request) -> Response {
         }
         _ if req.target.starts_with("/echo") => {
             let what = req.target.split('/').last().unwrap();
-            Response::new("200 OK", what)
+
+            match req.headers.get("Accept-Encoding") {
+                Some(encoding) => match encoding.as_str() {
+                    "gzip" => {
+                        let mut res = Response::new("200 OK", what);
+                        res.insert_header("Content-Encoding", "gzip");
+                        res
+                    }
+
+                    _ => Response::new("200 OK", what),
+                },
+
+                None => Response::new("200 OK", what),
+            }
         }
 
         _ if req.target.starts_with("/files") => {
