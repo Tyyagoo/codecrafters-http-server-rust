@@ -37,9 +37,10 @@ fn main() -> Result<()> {
         match stream {
             Ok(stream) => {
                 println!("accepted new connection");
-                // std::thread::spawn(move || {
-                handle_connection(stream).unwrap();
-                // });
+                // TODO: use tokio
+                std::thread::spawn(move || {
+                    handle_connection(stream).unwrap();
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
