@@ -97,13 +97,13 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 fn router(req: Request) -> Response {
     match req.target {
         "/" => Response::new("200 OK", ""),
+        "/user-agent" => {
+            let agent = req.headers.get("User-Agent").unwrap();
+            Response::new("200 OK", *agent)
+        }
         _ if req.target.starts_with("/echo") => {
             let what = req.target.split('/').last().unwrap();
-            let len = what.len().to_string();
-            let mut response = Response::new("200 OK", what);
-            response.insert_header("Content-Type", "text/plain");
-            response.insert_header("Content-length", len);
-            response
+            Response::new("200 OK", what)
         }
         _ => Response::new("404 Not Found", ""),
     }

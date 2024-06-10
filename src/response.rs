@@ -10,11 +10,15 @@ pub struct Response {
 
 impl Response {
     pub fn new(status: impl Into<String>, body: impl Into<String>) -> Response {
+        let body = body.into();
         Response {
+            headers: Vec::from([
+                ("Content-Type".into(), "text/plain".into()),
+                ("Content-Length".into(), body.len().to_string()),
+            ]),
             status: status.into(),
-            body: body.into(),
             version: "HTTP/1.1".into(),
-            headers: Vec::new(),
+            body,
         }
     }
 
