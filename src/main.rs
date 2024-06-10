@@ -22,12 +22,12 @@ enum HttpMethod {
 }
 
 #[derive(Debug)]
-struct Request<'a> {
+struct Request {
     method: HttpMethod,
-    target: &'a str,
-    version: &'a str,
-    headers: HashMap<String, &'a str>,
-    body: &'a str,
+    target: String,
+    version: String,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
 }
 
 fn main() -> Result<()> {
@@ -37,9 +37,9 @@ fn main() -> Result<()> {
         match stream {
             Ok(stream) => {
                 println!("accepted new connection");
-                std::thread::spawn(move || {
-                    handle_connection(stream).unwrap();
-                });
+                // std::thread::spawn(move || {
+                handle_connection(stream).unwrap();
+                // });
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -50,45 +50,66 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let buf = BufReader::new(&mut stream);
-    let lines: Vec<String> = buf
-        .lines()
-        .map(|line| line.unwrap())
-        .take_while(|line| !line.is_empty())
-        .collect();
+fn parse_request_line<T: Read>(buf: &mut BufReader<T>) -> Result<(HttpMethod, String, String)> {
+    let mut request_line = String::new();
+    let _ = buf.read_line(&mut request_line)?;
+    let mut parts = request_line.split_ascii_whitespace();
 
-    let mut start_line = lines[0].split_ascii_whitespace();
-
-    let method = match start_line.next().expect("Missing HTTP method.") {
+    let method = match parts.next().expect("Missing HTTP method.") {
         "GET" => HttpMethod::Get,
         "POST" => HttpMethod::Post,
         _ => unimplemented!(),
     };
 
-    let target = start_line.next().expect("Missing target.");
-    let version = start_line.next().expect("Missing HTTP version.");
+    let target = parts.next().expect("Missing target.");
+    let version = parts.next().expect("Missing HTTP version.");
 
+    Ok((method, target.into(), version.into()))
+}
+
+fn parse_headers<T: Read>(buf: &mut BufReader<T>) -> Result<HashMap<String, String>> {
     let mut headers = HashMap::new();
-    for line in lines.iter() {
-        let line = line.trim();
-        if line.is_empty() {
+
+    loop {
+        let mut line = String::new();
+        let _ = buf.read_line(&mut line)?;
+        if line.trim().is_empty() {
             break;
         }
 
         let mut parts = line.split_ascii_whitespace();
         headers.insert(
             parts.next().unwrap().replace(':', ""),
-            parts.next().unwrap(),
+            parts.next().unwrap().trim().to_string(),
         );
     }
+
+    Ok(headers)
+}
+
+fn handle_connection(mut stream: TcpStream) -> Result<()> {
+    let mut buf = BufReader::new(&mut stream);
+
+    let (method, target, version) = parse_request_line(&mut buf).unwrap();
+    let headers = parse_headers(&mut buf)?;
+
+    let body = match headers.get("Content-Length") {
+        Some(len) => {
+            let size = len.parse().expect("Invalid Content-Length");
+            let mut buffer = vec![0; size];
+            let n = buf.read(&mut buffer)?;
+            assert!(n == size);
+            buffer
+        }
+        None => vec![],
+    };
 
     let request = Request {
         method,
         target,
         version,
         headers,
-        body: "",
+        body,
     };
 
     println!("{:?}", request);
@@ -99,11 +120,11 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 }
 
 fn router(req: Request) -> Response {
-    match req.target {
+    match req.target.as_str() {
         "/" => Response::new("200 OK", ""),
         "/user-agent" => {
             let agent = req.headers.get("User-Agent").unwrap();
-            Response::new("200 OK", *agent)
+            Response::new("200 OK", agent)
         }
         _ if req.target.starts_with("/echo") => {
             let what = req.target.split('/').last().unwrap();
@@ -115,9 +136,16 @@ fn router(req: Request) -> Response {
             let filename = req.target.split("/").last().unwrap().to_string();
             let path: PathBuf = [base, filename].iter().collect();
 
-            match fs::read(path) {
-                Ok(buf) => Response::new_stream("200 OK", buf),
-                Err(_) => Response::new("404 Not Found", ""),
+            match req.method {
+                HttpMethod::Get => match fs::read(path) {
+                    Ok(buf) => Response::new_stream("200 OK", buf),
+                    Err(_) => Response::new("404 Not Found", ""),
+                },
+                HttpMethod::Post => {
+                    fs::write(path, req.body).unwrap();
+                    Response::new("201 Created", "")
+                }
+                _ => panic!(),
             }
         }
 
